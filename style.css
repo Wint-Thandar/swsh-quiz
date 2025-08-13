@@ -304,15 +304,14 @@ h1, h2, h3, h4, h5, h6,
 /* Quiz components */
 
 .quiz-container {
-    padding: var(--spacing-xl) calc(var(--spacing-lg) * 0.8);
-    margin: 0 0 var(--spacing-lg) 0;
+    padding: var(--spacing-lg) calc(var(--spacing-md) * 0.8);
+    margin: 0 0 var(--spacing-md) 0;
 }
 
 
 /* Responsive styles moved to consolidated section at end of file */
 
-.quiz-container::before,
-.stats-container::before {
+.quiz-container::before {
     content: '';
     position: absolute;
     top: 0;
@@ -323,10 +322,12 @@ h1, h2, h3, h4, h5, h6,
     border-radius: var(--radius-xl) var(--radius-xl) 0 0;
 }
 
+/* Removed stats-container::before to eliminate line between section header and stats */
+
 
 .question-card {
-    padding: calc(var(--spacing-xl) * 0.7) calc(var(--spacing-lg) * 0.7);
-    margin: calc(var(--spacing-lg) * 0.7) 0;
+    padding: var(--spacing-md) var(--spacing-sm);
+    margin: var(--spacing-sm) 0;
     box-shadow: var(--shadow-card);
 }
 
@@ -397,7 +398,7 @@ h1, h2, h3, h4, h5, h6,
 }
 
 .score-text {
-    font-family: var(--font-decorative);
+    font-family: var(--font-body);
     font-size: clamp(1rem, 2.5vw, 1.3rem);
     line-height: 1.8;
     position: relative;
@@ -408,6 +409,7 @@ h1, h2, h3, h4, h5, h6,
 
 .category-header {
     text-align: center;
+    margin-top: var(--spacing-lg);
     margin-bottom: var(--spacing-xl);
 }
 
@@ -457,8 +459,8 @@ h1, h2, h3, h4, h5, h6,
 
 /* Buttons and interactions */
 .answer-section {
-    margin-top: var(--spacing-lg);
-    margin-bottom: var(--spacing-md);
+    margin-top: var(--spacing-sm);
+    margin-bottom: var(--spacing-sm);
 }
 
 .answer-prompt {
@@ -484,14 +486,14 @@ h1, h2, h3, h4, h5, h6,
     background: var(--white);
     color: var(--dark-gray);
     border: 2px solid var(--border-light);
-    padding: var(--spacing-sm) var(--spacing-md);
-    margin: var(--spacing-xs) auto;
+    padding: 0.4rem var(--spacing-sm);
+    margin: 0.25rem auto;
     font-weight: 300;
     width: 100%;
     text-align: left;
-    font-size: 0.95rem;
-    line-height: 1.4;
-    min-height: 48px;
+    font-size: 0.9rem;
+    line-height: 1.3;
+    min-height: 40px;
     display: flex;
     align-items: center;
 }
@@ -515,12 +517,13 @@ h1, h2, h3, h4, h5, h6,
 .quiz-start-button {
     background: var(--gradient-primary);
     color: var(--dark-gray);
-    padding: var(--spacing-md) var(--spacing-xl);
-    font-size: 1.1rem;
+    padding: 0.6rem var(--spacing-lg);
+    font-size: 0.95rem;
     width: 100%;
-    margin: var(--spacing-md) auto 0 auto;
+    margin: 0.5rem auto 0 auto;
     box-shadow: var(--shadow-medium);
     display: block;
+    min-height: 2.8rem;
 }
 
 .quiz-start-button:hover {
@@ -540,21 +543,23 @@ h1, h2, h3, h4, h5, h6,
 .quiz-actions {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-xs);
-    margin-top: var(--spacing-sm);
+    gap: 0.25rem;
+    margin-top: 0.25rem;
     align-items: center;
 }
 
 .action-button {
     background: var(--gradient-primary);
     color: var(--dark-gray);
-    padding: 0.6rem var(--spacing-lg);
+    padding: 0.5rem var(--spacing-md);
     border-radius: var(--radius-md);
     width: 100%;
     margin: 0 auto;
-    min-width: 150px;
+    min-width: 120px;
     box-shadow: var(--shadow-medium);
     display: block;
+    font-size: 0.9rem;
+    min-height: 2.5rem;
 }
 
 .action-button:hover {
@@ -580,11 +585,34 @@ h1, h2, h3, h4, h5, h6,
     margin-right: 0;
 }
 
+/* Compact form styles - Hide labels but keep them for accessibility */
+.stTextInput label,
+.stTextArea label,
+.stSelectbox label,
+.stNumberInput label {
+    display: none !important;
+}
+
+/* Compact spacing for form elements */
+.stTextInput,
+.stTextArea,
+.stSelectbox,
+.stNumberInput {
+    margin-bottom: 0.25rem !important;
+}
+
+.stTextInput > div,
+.stTextArea > div,
+.stSelectbox > div,
+.stNumberInput > div {
+    margin-bottom: 0 !important;
+}
+
 /* Streamlit component overrides */
 .stButton {
-    width: 100%;
     display: flex;
-    justify-content: center;
+    justify-content: stretch;
+    margin-bottom: 0.5rem;
 }
 
 .stButton > button {
@@ -592,14 +620,13 @@ h1, h2, h3, h4, h5, h6,
     color: var(--primary-pink);
     border: 2px solid var(--border-light);
     border-radius: var(--radius-xl);
-    padding: 0.8rem var(--spacing-xl);
+    padding: 0.6rem var(--spacing-lg);
     font-weight: 300;
     transition: var(--transition-normal);
     box-shadow: none;
-    font-size: 1rem;
-    min-height: 3.5rem;
+    font-size: 0.95rem;
+    min-height: 2.8rem;
     font-family: var(--font-body);
-    width: 100%;
 }
 
 .stButton > button:hover {
@@ -630,8 +657,8 @@ h1, h2, h3, h4, h5, h6,
 .stTextArea > div > div > textarea {
     border-radius: var(--radius-lg);
     border: 2px solid var(--border-light);
-    padding: var(--spacing-md) 1.2rem;
-    font-size: 1rem;
+    padding: 0.6rem 1rem;
+    font-size: 0.95rem;
     transition: var(--transition-normal);
     background: var(--white) !important;
     background-color: var(--white) !important;
@@ -639,6 +666,7 @@ h1, h2, h3, h4, h5, h6,
     color: var(--dark-gray) !important;
     -webkit-text-fill-color: var(--dark-gray) !important;
     width: 100%;
+    min-height: 2.5rem;
 }
 
 .stTextInput > div > div > input:focus,
@@ -673,6 +701,12 @@ h1, h2, h3, h4, h5, h6,
     border-radius: var(--radius-lg);
     width: 100%;
     display: flex;
+    min-height: 2.5rem;
+}
+
+.stSelectbox > div > div > div {
+    padding: 0.6rem 1rem;
+    font-size: 0.95rem;
 }
 
 
@@ -1011,33 +1045,78 @@ h1, h2, h3, h4, h5, h6,
     }
 }
 
-.stats-header {
-    text-align: center;
-    margin-bottom: var(--spacing-xs);
+/* Removed duplicate stats header styles - now using reusable section-header */
+
+/* Mobile-friendly stats grid for admin view */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--spacing-md);
+    margin: var(--spacing-lg) 0;
 }
 
-.stats-title {
-    font-family: var(--font-decorative);
-    font-size: clamp(1.5rem, 3vw, 2.5rem);
-    font-weight: 700;
+.stat-item {
     background: var(--gradient-primary);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    padding: var(--spacing-xs);
-    margin: var(--spacing-xs);
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-md) var(--spacing-lg);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    box-shadow: var(--shadow-card);
+    transition: var(--transition-normal);
+    position: relative;
+    overflow: hidden;
 }
 
-.stats-subtitle {
+.stat-item:hover {
+    transform: var(--lift-medium);
+    box-shadow: var(--shadow-heavy);
+}
+
+.stat-item::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -50%;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+    pointer-events: none;
+}
+
+.stat-icon {
+    font-size: 2rem;
+    flex-shrink: 0;
+    position: relative;
+    z-index: var(--z-base);
+}
+
+.stat-content {
+    flex: 1;
+    position: relative;
+    z-index: var(--z-base);
+    text-align: right;
+}
+
+.stat-value {
     font-family: var(--font-body);
-    font-size: 1.1rem;
-    color: var(--medium-gray);
-    font-weight: 300;
-    padding: var(--spacing-xs);
-    margin: var(--spacing-xs);
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--dark-gray);
+    line-height: 1.2;
 }
 
+.stat-label {
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--dark-gray);
+    opacity: 0.8;
+}
+
+
+
+/* Legacy metric card styles - keeping for backward compatibility */
 .metric-card {
     border-radius: var(--radius-lg);
     padding: var(--spacing-sm);
@@ -1156,30 +1235,7 @@ h1, h2, h3, h4, h5, h6,
     color: var(--dark-gray);
 }
 
-.admin-button-container {
-    display: flex;
-    gap: var(--spacing-md);
-    justify-content: space-between;
-    align-items: center;
-    margin-top: var(--spacing-md);
-}
 
-.admin-button-container .stButton {
-    flex: 0 0 auto;
-}
-
-.admin-button-container .stButton:last-child > button {
-    background: linear-gradient(135deg, #ff4757 0%, #ff3742 100%);
-    color: var(--dark-gray);
-    border: none;
-    box-shadow: var(--shadow-medium);
-}
-
-.admin-button-container .stButton:last-child > button:hover {
-    background: linear-gradient(135deg, #ff3742 0%, #ff2f3a 100%);
-    box-shadow: 0 6px 20px rgba(255, 71, 87, 0.4);
-    transform: var(--lift-medium);
-}
 
 /* Custom messages */
 
@@ -1353,7 +1409,7 @@ h1, h2, h3, h4, h5, h6,
 
 /* Responsive design */
 @media (min-width: 576px) {
-    .main-title { font-size: 3rem; }
+    .main-title { font-size: 2rem; }
     .subtitle { font-size: 1.1rem; }
     .question-text { font-size: 1.5rem; }
 }
@@ -1362,7 +1418,7 @@ h1, h2, h3, h4, h5, h6,
 @media (min-width: 768px) {
     .main > div { padding: var(--spacing-lg) 0; }
     .quiz-container { padding: var(--spacing-xxl) calc(var(--spacing-xxl) * 0.8); }
-    .main-title { font-size: 3.5rem; }
+    .main-title { font-size: 2rem; }
     .question-text { font-size: 1.5rem; }
     .quiz-actions { flex-wrap: nowrap; }
     .player-info { flex-wrap: nowrap; }
@@ -1469,14 +1525,7 @@ h1, h2, h3, h4, h5, h6,
         width: 100%;
     }
     
-    .admin-button-container {
-        flex-direction: column;
-        gap: var(--spacing-sm);
-    }
-    
-    .admin-button-container .stButton {
-        width: 100%;
-    }
+    /* Admin buttons are already full width by default */
     
     .floating-hearts {
         display: none;
@@ -1504,8 +1553,7 @@ h1, h2, h3, h4, h5, h6,
         --medium-gray: #444444;
     }
     
-    .answer-button,
-    .stButton > button {
+    .answer-button {
         border-width: 3px;
     }
 }
@@ -1581,6 +1629,30 @@ h1, h2, h3, h4, h5, h6,
     .player-details {
         font-size: 0.75rem;
     }
+    
+    /* Tablet-optimized stats grids */
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--spacing-md);
+    }
+    
+    .stat-item {
+        padding: var(--spacing-md);
+    }
+    
+    .stat-icon {
+        font-size: 1.8rem;
+    }
+    
+    .stat-value {
+        font-size: 1.6rem;
+    }
+    
+    .stat-label {
+        font-size: 0.85rem;
+    }
+    
+
 }
 
 /* Mobile styles (480px and below) */
@@ -1614,6 +1686,32 @@ h1, h2, h3, h4, h5, h6,
     .answer-section {
         margin-top: var(--spacing-lg);
     }
+    
+    /* Mobile-optimized stats grids */
+    .stats-grid {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-sm);
+        margin: var(--spacing-md) 0;
+    }
+    
+    .stat-item {
+        padding: var(--spacing-sm) var(--spacing-md);
+        gap: var(--spacing-sm);
+    }
+    
+    .stat-icon {
+        font-size: 1.5rem;
+    }
+    
+    .stat-value {
+        font-size: 1.4rem;
+    }
+    
+    .stat-label {
+        font-size: 0.8rem;
+    }
+    
+
     
     .stTabs [data-baseweb="tab-list"] {
         gap: var(--spacing-xs);

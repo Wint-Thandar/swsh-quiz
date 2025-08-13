@@ -69,12 +69,38 @@ The following environment variables should be set in the `.env` file:
 - `ADMIN_PASSWORD`: Password for accessing the admin panel
 - `ENVIRONMENT`: Set to "development" or "production"
 
+## Streamlit Data Management
+
+This application leverages Streamlit's powerful data handling capabilities:
+
+### Session State Management
+- **User Progress Tracking**: Quiz progress and scores are maintained across page interactions using `st.session_state`
+- **Admin Authentication**: Login status persists throughout the admin session
+- **Quiz State Persistence**: Current question, answers, and navigation state are preserved
+
+### Data Storage and Caching
+- **Encrypted Database**: Quiz questions and user data are stored in encrypted format
+- **Performance Optimization**: Streamlit's caching mechanisms (`@st.cache_data`) optimize data loading
+- **Real-time Updates**: Leaderboard and quiz statistics update dynamically
+
+### Data Display Components
+- **Interactive Tables**: User scores and leaderboards displayed using `st.dataframe`
+- **Progress Visualization**: Quiz progress shown with `st.progress` bars
+- **Dynamic Charts**: Score distributions and statistics using Streamlit's charting capabilities
+- **Form Handling**: Quiz submissions and admin forms managed through `st.form`
+
+### Data Security
+- **Encrypted Storage**: All sensitive data encrypted before storage
+- **Session Isolation**: User data isolated per session
+- **Secure State Management**: Admin privileges managed through secure session state
+
 ## Technical Highlights
 
 - Modular function design with reusable components
 - Efficient CSS with consolidated responsive breakpoints
 - Clean separation of concerns between UI and logic
 - Type hints for better code documentation
+- Streamlit-native data handling for optimal performance
 
 ## Security Notes
 

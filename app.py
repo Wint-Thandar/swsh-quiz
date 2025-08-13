@@ -12,6 +12,9 @@ import secrets
 import sqlite3
 import base64
 import random
+import csv
+import io
+from datetime import datetime
 from typing import List, Dict, Optional, Tuple, Any
 
 import streamlit as st
@@ -166,9 +169,10 @@ class SecureQuizManager:
     def _insert_default_categories(self, cursor: sqlite3.Cursor) -> None:
         """Insert default quiz categories into the database."""
         default_categories = [
-            ("Character Knowledge", "Test your knowledge about the main characters"),
-            ("Romantic Moments", "The sweetest scenes from the series"),
-            ("Quotes & Dialogues", "Famous lines from Somewhere Somehow")
+            ("Character Knowledge", "Think you could write their autobiography? 📝"),
+            ("Romance & Relationships", "Relive the sparks, drama, and heart-flutters 💕"),
+            ("Quotes & Dialogues", "Because some words live rent-free in your head 💬"),
+            ("World & Setting", "From hidden details to iconic backdrops ⛩️")
         ]
         
         for name, description in default_categories:
@@ -351,6 +355,241 @@ class SecureQuizManager:
                 'avg_score': avg_score,
                 'total_questions': sum(count for _, count in category_stats)
             }
+    
+    def export_questions_to_csv(self) -> str:
+        """Export all questions to CSV format."""
+        questions = self.get_all_questions()
+        categories = self.get_categories()
+        category_map = {cat_id: name for cat_id, name, _ in categories}
+        
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write header
+        writer.writerow([
+            'Category', 'Question', 'Option A', 'Option B', 'Option C', 'Option D', 
+            'Correct Answer', 'Explanation'
+        ])
+        
+        # Write questions
+        for q in questions:
+            category_name = category_map.get(q['category_id'], 'Unknown')
+            correct_letter = chr(64 + q['correct_answer'])  # Convert 1-based to A,B,C,D
+            
+            writer.writerow([
+                category_name,
+                q['question'],
+                q['options'][0],
+                q['options'][1], 
+                q['options'][2],
+                q['options'][3],
+                correct_letter,
+                q.get('explanation', '')
+            ])
+        
+        return output.getvalue()
+    
+    def export_leaderboard_to_csv(self) -> str:
+        """Export all user scores to CSV format."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT us.username, c.name as category, us.score, us.total_questions,
+                       ROUND((us.score * 100.0 / us.total_questions), 1) as percentage, us.completed_at
+                FROM user_scores us
+                LEFT JOIN quiz_categories c ON us.category_id = c.id
+                ORDER BY us.completed_at DESC
+            """)
+            scores = cursor.fetchall()
+        
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write header
+        writer.writerow([
+            'Username', 'Category', 'Score', 'Total Questions', 'Percentage', 'Completed At'
+        ])
+        
+        # Write scores
+        for username, category, score, total, percentage, completed_at in scores:
+            category_name = category if category else 'All Categories'
+            writer.writerow([
+                username, category_name, score, total, f"{percentage}%", completed_at
+            ])
+        
+        return output.getvalue()
+    
+    def import_leaderboard_from_csv(self, csv_content: str) -> Dict[str, Any]:
+        """Import user scores from CSV content."""
+        try:
+            # Parse CSV
+            csv_file = io.StringIO(csv_content)
+            reader = csv.DictReader(csv_file)
+            
+            # Get existing categories
+            categories = self.get_categories()
+            category_map = {name: cat_id for cat_id, name, _ in categories}
+            category_map['All Categories'] = QUIZ_CONFIG['all_categories_id']
+            
+            imported_count = 0
+            errors = []
+            
+            for row_num, row in enumerate(reader, start=2):  # Start at 2 for header
+                try:
+                    # Validate required fields
+                    required_fields = ['Username', 'Category', 'Score', 'Total Questions']
+                    
+                    for field in required_fields:
+                        if not row.get(field, '').strip():
+                            errors.append(f"Row {row_num}: Missing {field}")
+                            continue
+                    
+                    if errors and errors[-1].startswith(f"Row {row_num}"):
+                        continue
+                    
+                    # Parse data
+                    username = row['Username'].strip()
+                    category_name = row['Category'].strip()
+                    score = int(row['Score'].strip())
+                    total_questions = int(row['Total Questions'].strip())
+                    
+                    # Validate score range
+                    if score < 0 or score > total_questions:
+                        errors.append(f"Row {row_num}: Invalid score {score}/{total_questions}")
+                        continue
+                    
+                    # Get category ID
+                    category_id = category_map.get(category_name)
+                    if category_id is None:
+                        errors.append(f"Row {row_num}: Unknown category '{category_name}'")
+                        continue
+                    
+                    # Insert score
+                    with sqlite3.connect(self.db_path) as conn:
+                        cursor = conn.cursor()
+                        
+                        # Check if we have a completed_at timestamp
+                        completed_at = row.get('Completed At', '').strip()
+                        if completed_at:
+                            cursor.execute(
+                                "INSERT INTO user_scores (username, category_id, score, total_questions, completed_at) "
+                                "VALUES (?, ?, ?, ?, ?)",
+                                (username, category_id, score, total_questions, completed_at)
+                            )
+                        else:
+                            cursor.execute(
+                                "INSERT INTO user_scores (username, category_id, score, total_questions) "
+                                "VALUES (?, ?, ?, ?)",
+                                (username, category_id, score, total_questions)
+                            )
+                        
+                        conn.commit()
+                        imported_count += 1
+                        
+                except ValueError as e:
+                    errors.append(f"Row {row_num}: Invalid number format - {str(e)}")
+                except Exception as e:
+                    errors.append(f"Row {row_num}: {str(e)}")
+            
+            return {
+                'success': True,
+                'imported_count': imported_count,
+                'errors': errors
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'imported_count': 0,
+                'errors': [f"Failed to parse CSV: {str(e)}"]
+            }
+    
+    def import_questions_from_csv(self, csv_content: str) -> Dict[str, Any]:
+        """Import questions from CSV content."""
+        try:
+            # Parse CSV
+            csv_file = io.StringIO(csv_content)
+            reader = csv.DictReader(csv_file)
+            
+            # Get existing categories
+            categories = self.get_categories()
+            category_map = {name: cat_id for cat_id, name, _ in categories}
+            
+            imported_count = 0
+            errors = []
+            
+            for row_num, row in enumerate(reader, start=2):  # Start at 2 for header
+                try:
+                    # Validate required fields
+                    required_fields = ['Category', 'Question', 'Option A', 'Option B', 'Option C', 'Option D', 'Correct Answer']
+                    
+                    for field in required_fields:
+                        if not row.get(field, '').strip():
+                            errors.append(f"Row {row_num}: Missing {field}")
+                            continue
+                    
+                    if errors and errors[-1].startswith(f"Row {row_num}"):
+                        continue
+                    
+                    # Get or create category
+                    category_name = row['Category'].strip()
+                    if category_name not in category_map:
+                        # Create new category
+                        with sqlite3.connect(self.db_path) as conn:
+                            cursor = conn.cursor()
+                            cursor.execute(
+                                "INSERT INTO quiz_categories (name, description) VALUES (?, ?)",
+                                (category_name, f"Imported category: {category_name}")
+                            )
+                            category_id = cursor.lastrowid
+                            category_map[category_name] = category_id
+                    else:
+                        category_id = category_map[category_name]
+                    
+                    # Validate correct answer
+                    correct_answer = row['Correct Answer'].strip().upper()
+                    if correct_answer not in ['A', 'B', 'C', 'D']:
+                        errors.append(f"Row {row_num}: Invalid correct answer '{correct_answer}'. Must be A, B, C, or D")
+                        continue
+                    
+                    # Convert to 1-based index
+                    correct_idx = ord(correct_answer) - ord('A') + 1
+                    
+                    # Prepare options
+                    options = [
+                        row['Option A'].strip(),
+                        row['Option B'].strip(), 
+                        row['Option C'].strip(),
+                        row['Option D'].strip()
+                    ]
+                    
+                    # Add question
+                    self.add_question(
+                        category_id,
+                        row['Question'].strip(),
+                        options,
+                        correct_idx,
+                        row.get('Explanation', '').strip()
+                    )
+                    
+                    imported_count += 1
+                    
+                except Exception as e:
+                    errors.append(f"Row {row_num}: {str(e)}")
+            
+            return {
+                'success': True,
+                'imported_count': imported_count,
+                'errors': errors
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"Failed to parse CSV: {str(e)}",
+                'imported_count': 0,
+                'errors': []
+            }
 
 @st.cache_resource
 def get_quiz_manager() -> SecureQuizManager:
@@ -434,7 +673,7 @@ def render_main_header() -> None:
     header_html = """
         <div class="main-header">
             <h1 class="main-title">
-                Somewhere Somehow GL Series
+                Somewhere Somehow
             </h1>
             <p class="subtitle">✨ Interactive Quiz ✨</p>
             <p class="tagline">
@@ -553,8 +792,8 @@ def render_category_selection(quiz_manager: SecureQuizManager) -> None:
     """
     st.markdown(
         f'<div class="welcome-message">'
-        f'<h3 style="margin: 0; color: var(--deep-pink); font-family: var(--font-decorative);">'
-        f'Hello, {st.session_state.username}! Choose your category~ 🫶</h3>'
+        f'<h4 style="margin: 0; color: var(--deep-pink); font-family: var(--font-decorative);">'
+        f'Hello, {st.session_state.username}! Let\'s start~ </h4>'
         f'</div>', 
         unsafe_allow_html=True
     )
@@ -586,8 +825,8 @@ def render_all_categories_option(quiz_manager: SecureQuizManager,
     """
     st.markdown(
         '<div class="category-header">'
-        '<h3 class="category-title">✨ All Categories ✨</h3>'
-        '<p class="category-description">Questions from all available categories will be randomly mixed.</p>'
+        '<h5 class="category-title">✨ All Categories ✨</h5>'
+        '<p class="category-description">Prove you\'re the ultimate fan 🩷💙</p>'
         '</div>', 
         unsafe_allow_html=True
     )
@@ -623,7 +862,7 @@ def render_individual_category_option(cat_id: int, name: str, description: str) 
     """
     st.markdown(
         f'<div class="category-header">'
-        f'<h3 class="category-title">✨ {name} ✨</h3>'
+        f'<h5 class="category-title">✨ {name} ✨</h5>'
         f'<p class="category-description">{description}</p>'
         f'<p style="color: var(--medium-gray); font-style: italic; margin-top: 1rem;">'
         f'This category is currently unavailable.</p>'
@@ -817,113 +1056,71 @@ def complete_quiz(quiz_manager: SecureQuizManager) -> None:
     )
     st.rerun()
 
-def render_database_statistics(quiz_manager: SecureQuizManager, admin_view: bool = False) -> None:
-    """Render database statistics section."""
+def render_database_statistics(quiz_manager: SecureQuizManager) -> None:
+    """Render database statistics section for admin view."""
     stats = quiz_manager.get_database_statistics()
     categories = quiz_manager.get_categories()
     
-    if admin_view:
-        st.markdown("""
-            <div class="stats-container">
-                <div class="stats-header">
-                    <div class="stats-title">🔍 Database Statistics</div>
-                    <div class="stats-subtitle">Overview of quiz data and user engagement</div>
-                </div>
-        """, unsafe_allow_html=True)
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-icon">👥</div>
-                    <div class="metric-value">{stats['unique_users']}</div>
-                    <div class="metric-label">Total Users</div>
-                </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-icon">🎯</div>
-                    <div class="metric-value">{stats['total_scores']}</div>
-                    <div class="metric-label">Quiz Sessions</div>
-                </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-icon">📚</div>
-                    <div class="metric-value">{len(categories)}</div>
-                    <div class="metric-label">Categories</div>
-                </div>
-            """, unsafe_allow_html=True)
-            
-        with col4:
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-icon">⭐</div>
-                    <div class="metric-value">{stats['avg_score']}%</div>
-                    <div class="metric-label">Avg Score</div>
-                </div>
-            """, unsafe_allow_html=True)
-        
-        st.markdown(f"""
-                <div class="total-questions">
-                    📝 Total Questions Available: <strong>{stats['total_questions']}</strong>
-                </div>
-                
-                <div class="questions-breakdown">
-                    <div class="breakdown-title">
-                        📊 Questions per Category
-                    </div>
-        """, unsafe_allow_html=True)
-        
-        for cat_name, count in stats['category_stats']:
-            st.markdown(f"""
-                    <div class="breakdown-item">
-                        <span class="breakdown-category">{cat_name}</span>
-                        <span class="breakdown-count">{count}</span>
-                    </div>
-            """, unsafe_allow_html=True)
-        
-        st.markdown("""
+    render_section_header("Database Statistics", "Overview of quiz data and user engagement", "🔍")
+    
+    # Mobile-friendly stats grid
+    st.markdown(f"""
+        <div class="stats-grid">
+            <div class="stat-item">
+                <div class="stat-icon">👥</div>
+                <div class="stat-content">
+                    <div class="stat-value">{stats['unique_users']}</div>
+                    <div class="stat-label">Total Users</div>
                 </div>
             </div>
+            <div class="stat-item">
+                <div class="stat-icon">🎯</div>
+                <div class="stat-content">
+                    <div class="stat-value">{stats['total_scores']}</div>
+                    <div class="stat-label">Quiz Sessions</div>
+                </div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-icon">📚</div>
+                <div class="stat-content">
+                    <div class="stat-value">{len(categories)}</div>
+                    <div class="stat-label">Categories</div>
+                </div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-icon">⭐</div>
+                <div class="stat-content">
+                    <div class="stat-value">{stats['avg_score']}%</div>
+                    <div class="stat-label">Avg Score</div>
+                </div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-icon">📝</div>
+                <div class="stat-content">
+                    <div class="stat-value">{stats['total_questions']}</div>
+                    <div class="stat-label">Questions</div>
+                </div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown(f"""
+            
+            <div class="questions-breakdown">
+                <div class="breakdown-title">
+                    📊 Questions per Category
+                </div>
+    """, unsafe_allow_html=True)
+    
+    for cat_name, count in stats['category_stats']:
+        st.markdown(f"""
+                <div class="breakdown-item">
+                    <span class="breakdown-category">{cat_name}</span>
+                    <span class="breakdown-count">{count}</span>
+                </div>
         """, unsafe_allow_html=True)
-    else:
-        st.markdown(
-            '<div class="stats-container">'
-            '<h3 style="color: var(--deep-pink); font-family: var(--font-decorative); text-align: center; margin-bottom: 1.5rem;">'
-            '🔍 Database Statistics</h3>'
-            '</div>', 
-            unsafe_allow_html=True
-        )
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric("Total Users", stats['unique_users'])
-        with col2:
-            st.metric("Quiz Sessions", stats['total_scores'])
-        with col3:
-            st.metric("Categories", len(categories))
-        
-        st.markdown(
-            '<div class="progress-section">'
-            '<h4 style="color: var(--dark-gray); margin-bottom: 1rem;">Questions per Category:</h4>'
-            f'<p><strong>All Categories:</strong> {stats["total_questions"]} questions</p>'
-            '</div>', 
-            unsafe_allow_html=True
-        )
-        
-        for cat_name, count in stats['category_stats']:
-            st.markdown(
-                f'<div style="margin-left: 1rem; color: var(--dark-gray);">'
-                f'• <strong>{cat_name}:</strong> {count} questions</div>', 
-                unsafe_allow_html=True
-            )
+    
+    st.markdown("""            </div>        </div>    """, unsafe_allow_html=True)
 
 def render_quiz_completion() -> None:
     """
@@ -1105,7 +1302,6 @@ def render_about_tab() -> None:
     # Header
     render_section_header("About", "Learn more about Somewhere Somehow Quiz", "✍🏼")
     
-    # Add spacing above the hint box
     st.markdown("<div style='margin-top: 1.5rem;'></div>", unsafe_allow_html=True)
     
     # Add series image
@@ -1118,40 +1314,43 @@ def render_about_tab() -> None:
     Welcome to the interactive quiz experience for **Somewhere Somehow GL**, the romantic comedy series 
     that captured hearts with its tale of true love, comedy and second chances!
     
-    ### 🌟 Features:
+    #### 🌟 Features:
     - **Multiple Categories**: Test your knowledge across different aspects of the series.
     - **Competitive Fun**: Compare your scores with other fans on the leaderboard.
     - **Encouragement to Rewatch**: Get hints and reminders to rewatch key episodes for better understanding.
 
-    ### 💕 About the Series:
+    #### 💕 About the Series:
     *Somewhere Somehow* follows Kee, a reserved, witty, emotionally distant, and eco-conscious protagonist, alongside Peem, an affluent and admired high school sweetheart. Their worlds meet in a sequence of seemingly random encounters. Sickeningly sweet and adorable interactions follow suit, with a touch of humorous events. Even then, every love story has its own misunderstandings and struggles.  
 
     Watch the best romantic comedy Thai GL series, *Somewhere Somehow*, on [Idol Factory YouTube](https://youtube.com/playlist?list=PL4D0KlUVq4Ix1AF1_vliipbSFOvvGUNWO&si=rY-nJ3_0LA59ck0W) every Friday night at 10:30 PM Thailand time.
     
-    ### 🎯 Quiz Categories:
-    - **Character Knowledge**: Deep dive into the personalities and backgrounds.
-    - **Romantic Moments**: The scenes that made your heart flutter.
-    - **Quotes & Dialogues**: Memorable lines that stick with you.
+    #### 🎯 Quiz Categories:
+    Due to limited amount of questions, only "All Categories" category is available for now.
+    - **All Categories**: Prove you\'re the ultimate fan 🩷💙
+    - **Character Knowledge**: Think you could write their autobiography? 📝
+    - **Romance & Relationships**: Relive the sparks, drama, and heart-flutters 💕
+    - **Quotes & Dialogues**: Because some words live rent-free in your head 💬
+    - **World & Setting**: From hidden details to iconic backdrops ⛩️
     
-    ### 🏆 How to Play:
+    #### 🏆 How to Play:
     1. Enter your name to get started.
-    2. Choose a quiz category.
+    2. Choose "All Categories" quiz category.
     3. Answer questions about the series. Answers use the exact wordings from the official subtitles by Idol Factory.
     4. See your results and compare with others.
     5. Take more quizzes to improve your ranking!
     
-    ### 💡 Tips for High Scores:
+    #### 💡 Tips for High Scores:
     - Rewatch episodes on YouTube.
-    - Pay attention to character details.
+    - Pay attention to character and world setting details.
     - Remember the emotional moments.
     - Notice the little details in dialogue.
     - Pay attention to English subtitles. Answers use the exact wordings from the official subtitles by Idol Factory.
     
     ---
-    *"PeemKie for the win! 🤭"* 
     """
     
     st.markdown(about_content)
+    st.markdown("<div style='text-align: center;'>PeemKie for the win!!! 🚀</div>", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 def render_admin_tab() -> None:
@@ -1196,21 +1395,19 @@ def render_admin_interface() -> None:
     Provides sections for:
     - Adding new questions
     - Editing existing questions
+    - Database export/import
     - Viewing database statistics
     """
     quiz_manager = get_quiz_manager()
     
-    st.markdown("---")
-    
     # Add new question section
     render_add_question_section(quiz_manager)
-    
-    st.markdown("---")
     
     # Edit existing questions section
     render_edit_questions_section(quiz_manager)
     
-    st.markdown("---")
+    # Database export/import section
+    render_database_export_import_section(quiz_manager)
     
     # Database statistics section
     render_admin_statistics_section(quiz_manager)
@@ -1222,7 +1419,7 @@ def render_add_question_section(quiz_manager: SecureQuizManager) -> None:
     Args:
         quiz_manager: Instance of SecureQuizManager
     """
-    st.markdown("### ➕ Add New Question")
+    st.markdown("##### ➕ Add New Question")
     
     categories = quiz_manager.get_categories()
     category_options = {name: cat_id for cat_id, name, _ in categories}
@@ -1231,17 +1428,16 @@ def render_add_question_section(quiz_manager: SecureQuizManager) -> None:
     selected_cat = st.selectbox("Select Category:", list(category_options.keys()))
     question_text = st.text_area("Question:", placeholder="Enter your question here...")
     
-    st.markdown("**Answer Options:**")
     option1 = st.text_input("Option A:", placeholder="First option")
     option2 = st.text_input("Option B:", placeholder="Second option")
     option3 = st.text_input("Option C:", placeholder="Third option")
     option4 = st.text_input("Option D:", placeholder="Fourth option")
     
     correct_answer = st.selectbox("Correct Answer:", ["A", "B", "C", "D"])
-    explanation = st.text_area("Explanation (optional):", placeholder="Why is this the correct answer?")
+    explanation = st.text_area("Hint:", placeholder="How to get the correct answer")
     
     # Add question button
-    if st.button("🚀 Add Question"):
+    if st.button("🚀 Add Question", use_container_width=True):
         if question_text and option1 and option2 and option3 and option4:
             options = [option1, option2, option3, option4]
             correct_idx = ord(correct_answer) - ord('A') + 1  # Convert to 1-indexed
@@ -1271,7 +1467,7 @@ def render_edit_questions_section(quiz_manager: SecureQuizManager) -> None:
     Args:
         quiz_manager: Instance of SecureQuizManager
     """
-    st.markdown("### ✏️ Edit Existing Questions")
+    st.markdown("##### ✏️ Edit Existing Questions")
     
     categories = quiz_manager.get_categories()
     category_options = {name: cat_id for cat_id, name, _ in categories}
@@ -1340,7 +1536,6 @@ def render_question_edit_form(quiz_manager: SecureQuizManager, selected_question
         category_options: Mapping of category names to IDs
         selected_id: ID of the selected question
     """
-    st.markdown("**Current Question Details:**")
     
     # Edit form fields
     edit_selected_cat = st.selectbox(
@@ -1356,7 +1551,6 @@ def render_question_edit_form(quiz_manager: SecureQuizManager, selected_question
         key="edit_question"
     )
     
-    st.markdown("**Answer Options:**")
     edit_option1 = st.text_input("Option A:", value=selected_question['options'][0], key="edit_opt1")
     edit_option2 = st.text_input("Option B:", value=selected_question['options'][1], key="edit_opt2")
     edit_option3 = st.text_input("Option C:", value=selected_question['options'][2], key="edit_opt3")
@@ -1373,7 +1567,7 @@ def render_question_edit_form(quiz_manager: SecureQuizManager, selected_question
     )
     
     edit_explanation = st.text_area(
-        "Explanation:", 
+        "Hint:", 
         value=selected_question.get('explanation', ''), 
         key="edit_explanation"
     )
@@ -1395,49 +1589,269 @@ def render_question_action_buttons(quiz_manager: SecureQuizManager, edit_selecte
         category_options: Category name to ID mapping
         selected_id: ID of question being edited
     """
-    st.markdown('<div class="admin-button-container">', unsafe_allow_html=True)
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        if st.button("💾 Update Question", key="update_btn"):
-            if edit_question_text and edit_option1 and edit_option2 and edit_option3 and edit_option4:
-                edit_options = [edit_option1, edit_option2, edit_option3, edit_option4]
-                edit_correct_idx = ord(edit_correct_answer) - ord('A') + 1  # Convert to 1-indexed
-                
-                quiz_manager.update_question(
-                    selected_id,
-                    category_options[edit_selected_cat],
-                    edit_question_text,
-                    edit_options,
-                    edit_correct_idx,
-                    edit_explanation
-                )
-                
-                st.markdown(
-                    '<div class="success-message">✅ Question updated successfully!</div>', 
-                    unsafe_allow_html=True
-                )
-                st.rerun()
-            else:
-                st.markdown(
-                    '<div class="error-message">❌ Please fill in all required fields!</div>', 
-                    unsafe_allow_html=True
-                )
-    
-    with col2:
-        if st.button("🗑️ Delete Question", key="delete_btn"):
-            quiz_manager.delete_question(selected_id)
+    if st.button("💾 Update Question", key="update_btn", use_container_width=True):
+        if edit_question_text and edit_option1 and edit_option2 and edit_option3 and edit_option4:
+            edit_options = [edit_option1, edit_option2, edit_option3, edit_option4]
+            edit_correct_idx = ord(edit_correct_answer) - ord('A') + 1  # Convert to 1-indexed
+            
+            quiz_manager.update_question(
+                selected_id,
+                category_options[edit_selected_cat],
+                edit_question_text,
+                edit_options,
+                edit_correct_idx,
+                edit_explanation
+            )
+            
             st.markdown(
-                '<div class="success-message">✅ Question deleted successfully!</div>', 
+                '<div class="success-message">✅ Question updated successfully!</div>', 
                 unsafe_allow_html=True
             )
             st.rerun()
+        else:
+            st.markdown(
+                '<div class="error-message">❌ Please fill in all required fields!</div>', 
+                unsafe_allow_html=True
+            )
     
-    st.markdown('</div>', unsafe_allow_html=True)
+    if st.button("🗑️ Delete Question", key="delete_btn", use_container_width=True):
+        quiz_manager.delete_question(selected_id)
+        st.markdown(
+            '<div class="success-message">✅ Question deleted successfully!</div>', 
+            unsafe_allow_html=True
+        )
+        st.rerun()
+
+def render_database_export_import_section(quiz_manager: SecureQuizManager) -> None:
+    """
+    Render the database export/import section of the admin interface.
+    
+    Args:
+        quiz_manager: Instance of SecureQuizManager
+    """
+    st.markdown("##### 📁 Database Export/Import")
+    
+    # Create tabs for Questions and Leaderboard
+    tab1, tab2 = st.tabs(["📝 Questions", "🏆 Leaderboard"])
+    
+    with tab1:
+        # Create two columns for export and import
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**📤 Export Questions**")
+            st.markdown("Download all questions as a CSV file for backup or sharing.")
+            
+            if st.button("📥 Export Questions to CSV", use_container_width=True, key="export_questions_btn"):
+                try:
+                    csv_data = quiz_manager.export_questions_to_csv()
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"quiz_questions_export_{timestamp}.csv"
+                    
+                    st.download_button(
+                        label="💾 Download Questions CSV",
+                        data=csv_data,
+                        file_name=filename,
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                    
+                    st.markdown(
+                        '<div class="success-message">✅ Export ready! Click the download button above.</div>',
+                        unsafe_allow_html=True
+                    )
+                except Exception as e:
+                    st.markdown(
+                        f'<div class="error-message">❌ Export failed: {str(e)}</div>',
+                        unsafe_allow_html=True
+                    )
+        
+        with col2:
+            st.markdown("**📤 Import Questions**")
+            st.markdown("Upload a CSV file to import questions. New categories will be created automatically.")
+            
+            # File uploader
+            uploaded_questions_file = st.file_uploader(
+                "Choose Questions CSV file",
+                type="csv",
+                key="questions_csv_upload",
+                help="CSV should have columns: Category, Question, Option A, Option B, Option C, Option D, Correct Answer, Explanation"
+            )
+            
+            if uploaded_questions_file is not None:
+                if st.button("📤 Import Questions", use_container_width=True, key="import_questions_btn"):
+                    try:
+                        # Read the uploaded file
+                        csv_content = uploaded_questions_file.read().decode('utf-8')
+                        
+                        # Import questions
+                        result = quiz_manager.import_questions_from_csv(csv_content)
+                        
+                        if result['success']:
+                            st.markdown(
+                                f'<div class="success-message">✅ Successfully imported {result["imported_count"]} questions!</div>',
+                                unsafe_allow_html=True
+                            )
+                            
+                            if result['errors']:
+                                st.markdown("**⚠️ Some rows had errors:**")
+                                for error in result['errors'][:10]:  # Show first 10 errors
+                                    st.markdown(f"- {error}")
+                                if len(result['errors']) > 10:
+                                    st.markdown(f"... and {len(result['errors']) - 10} more errors")
+                            
+                            # Clear the cache to refresh data
+                            st.cache_resource.clear()
+                            st.rerun()
+                        else:
+                            st.markdown(
+                                f'<div class="error-message">❌ Import failed: {result["error"]}</div>',
+                                unsafe_allow_html=True
+                            )
+                            
+                    except Exception as e:
+                        st.markdown(
+                            f'<div class="error-message">❌ Import failed: {str(e)}</div>',
+                            unsafe_allow_html=True
+                        )
+    
+    with tab2:
+        # Create two columns for export and import
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**📤 Export Leaderboard**")
+            st.markdown("Download all user scores as a CSV file for backup or analysis.")
+            
+            if st.button("📥 Export Leaderboard to CSV", use_container_width=True, key="export_leaderboard_btn"):
+                try:
+                    csv_data = quiz_manager.export_leaderboard_to_csv()
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"quiz_leaderboard_export_{timestamp}.csv"
+                    
+                    st.download_button(
+                        label="💾 Download Leaderboard CSV",
+                        data=csv_data,
+                        file_name=filename,
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                    
+                    st.markdown(
+                        '<div class="success-message">✅ Export ready! Click the download button above.</div>',
+                        unsafe_allow_html=True
+                    )
+                except Exception as e:
+                    st.markdown(
+                        f'<div class="error-message">❌ Export failed: {str(e)}</div>',
+                        unsafe_allow_html=True
+                    )
+        
+        with col2:
+            st.markdown("**📤 Import Leaderboard**")
+            st.markdown("Upload a CSV file to import user scores. Categories must already exist.")
+            
+            # File uploader
+            uploaded_leaderboard_file = st.file_uploader(
+                "Choose Leaderboard CSV file",
+                type="csv",
+                key="leaderboard_csv_upload",
+                help="CSV should have columns: Username, Category, Score, Total Questions, Percentage, Completed At"
+            )
+            
+            if uploaded_leaderboard_file is not None:
+                if st.button("📤 Import Leaderboard", use_container_width=True, key="import_leaderboard_btn"):
+                    try:
+                        # Read the uploaded file
+                        csv_content = uploaded_leaderboard_file.read().decode('utf-8')
+                        
+                        # Import leaderboard
+                        result = quiz_manager.import_leaderboard_from_csv(csv_content)
+                        
+                        if result['success']:
+                            st.markdown(
+                                f'<div class="success-message">✅ Successfully imported {result["imported_count"]} scores!</div>',
+                                unsafe_allow_html=True
+                            )
+                            
+                            if result['errors']:
+                                st.markdown("**⚠️ Some rows had errors:**")
+                                for error in result['errors'][:10]:  # Show first 10 errors
+                                    st.markdown(f"- {error}")
+                                if len(result['errors']) > 10:
+                                    st.markdown(f"... and {len(result['errors']) - 10} more errors")
+                            
+                            # Clear the cache to refresh data
+                            st.cache_resource.clear()
+                            st.rerun()
+                        else:
+                            st.markdown(
+                                f'<div class="error-message">❌ Import failed: {result["errors"][0] if result["errors"] else "Unknown error"}</div>',
+                                unsafe_allow_html=True
+                            )
+                            
+                    except Exception as e:
+                        st.markdown(
+                            f'<div class="error-message">❌ Import failed: {str(e)}</div>',
+                            unsafe_allow_html=True
+                        )
+    
+    # CSV format help
+    with st.expander("📋 CSV Format Help"):
+        format_tab1, format_tab2 = st.tabs(["📝 Questions Format", "🏆 Leaderboard Format"])
+        
+        with format_tab1:
+            st.markdown("""
+            **Required Questions CSV Format:**
+            
+            Your CSV file should have the following columns (in this exact order):
+            
+            | Column | Description | Example |
+            |--------|-------------|----------|
+            | Category | Question category | "Character Knowledge" |
+            | Question | The question text | "What is the main character's name?" |
+            | Option A | First answer option | "Alice" |
+            | Option B | Second answer option | "Bob" |
+            | Option C | Third answer option | "Charlie" |
+            | Option D | Fourth answer option | "Diana" |
+            | Correct Answer | Correct option (A, B, C, or D) | "A" |
+            | Explanation | Optional hint/explanation | "Alice is the protagonist" |
+            
+            **Notes:**
+            - The first row should contain column headers
+            - Categories will be created automatically if they don't exist
+            - Correct Answer must be exactly A, B, C, or D
+            - Explanation column is optional
+            - All other columns are required
+            """)
+        
+        with format_tab2:
+            st.markdown("""
+            **Required Leaderboard CSV Format:**
+            
+            Your CSV file should have the following columns (in this exact order):
+            
+            | Column | Description | Example |
+            |--------|-------------|----------|
+            | Username | Player's username | "Alice123" |
+            | Category | Quiz category name | "Character Knowledge" or "All Categories" |
+            | Score | Number of correct answers | "8" |
+            | Total Questions | Total number of questions | "10" |
+            | Percentage | Score percentage (optional) | "80.0%" |
+            | Completed At | Timestamp (optional) | "2024-01-15 14:30:25" |
+            
+            **Notes:**
+            - The first row should contain column headers
+            - Categories must already exist (except "All Categories")
+            - Score must be between 0 and Total Questions
+            - Percentage column is calculated automatically if not provided
+            - Completed At column is optional (uses current time if not provided)
+            - Username, Category, Score, and Total Questions are required
+            """)
 
 def render_admin_statistics_section(quiz_manager: SecureQuizManager) -> None:
     """Render the admin statistics section."""
-    render_database_statistics(quiz_manager, admin_view=True)
+    render_database_statistics(quiz_manager)
 
 if __name__ == "__main__":
     main()
